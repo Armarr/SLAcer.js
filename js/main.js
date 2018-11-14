@@ -212,37 +212,58 @@ function getSlice(layerNumber) {
             //console.log('layer number:', layerNumber);
             //console.log('z position :', zPosition);
 
-            convertURIToImageData(dataURL).then(function(imageData) {
-                // Here you can use imageData
-                /*
-                 var red = data[i];
-                 var green = data[i+1];
-                 var blue = data[i+2];
-                 var alpha = data[i+3];
-                 2 Options:
-                 Black red=0, green=0, blue=0, alpha=255;
-                 White red=255, green=255, blue=255, alpha=255;
-                 */
-                var width = settings.get('screen.width');
-                var height = settings.get('screen.height');
-                var pixel = 0;
-                var array = new Uint8Array(width*height/8);
-                var data = imageData.data;
+            convertURIToImageData(dataURL).then(function (imageData) {
+                var numberOfAaLayers = 4;
 
-                for(var w=0; w<data.length/height*4; w+=4) {
-                    for(var h=w; h<width*height*4; h+=(4*width)) {
-                        if(data[h]!==0){
-                            array[~~(pixel/8)] += Math.pow(2,(pixel%8))
+                if (layerNumber === 1)
+                    numberOfAaLayers = 1;
+
+                for (var aaSublayer = 0; aaSublayer < numberOfAaLayers; aaSublayer++) {
+                    // Here you can use imageData
+                    /*
+                     var red = data[i];
+                     var green = data[i+1];
+                     var blue = data[i+2];
+                     var alpha = data[i+3];
+                     2 Options:
+                     Black red=0, green=0, blue=0, alpha=255;
+                     White red=255, green=255, blue=255, alpha=255;
+                     */
+                    var width = settings.get('screen.width');
+                    var height = settings.get('screen.height');
+                    var pixel = 0;
+                    var array = new Uint8Array(width * height / 8);
+                    var data = imageData.data;
+                    var numberOfNonZeroBitstates = Math.pow(2, numberOfAaLayers) - 1;
+                    var currentSubLayerBitflag = Math.pow(2, (numberOfAaLayers - aaSublayer - 1));
+
+                    for (var w = 0; w < data.length / height * 4; w += 4) {
+                        for (var h = w; h < width * height * 4; h += (4 * width)) {
+                            var pixelAlphaValue = data[h];
+                            var relativePixelAlphaValue = Math.ceil(pixelAlphaValue / 255 * numberOfNonZeroBitstates);
+                            
+                            if (relativePixelAlphaValue & currentSubLayerBitflag) {
+                                array[~~(pixel / 8)] += Math.pow(2, pixel % 8);
+                            }
+                            pixel++;
                         }
-                        pixel++;
                     }
-                }
 
-                if(WOWExport) {// GCode logic
-                    wowFile += ";L:" + layerNumber + ";\nM106 S0;\nG1 Z" + settings.get('slicer.lifting.height') +
-                        " F" + settings.get('slicer.lifting.speed') +
-                        ";\nG1 Z-" + (settings.get('slicer.lifting.height') - settings.get('slicer.layers.height') / 1000) +
-                        " F" + settings.get('slicer.lifting.decline') + ";\n{{\n"
+                    // GCode logic
+                    wowFile += ";L:" + layerNumber + aaSublayer + ";\n";
+                    wowFile += "M106 S0;\n";
+
+                    if (aaSublayer === 0) {
+                        wowFile += "G1 Z" + settings.get('slicer.lifting.height') +
+                            " F" + settings.get('slicer.lifting.speed') + ";\n";
+                        wowFile += "G1 Z-" + (settings.get('slicer.lifting.height') - settings.get('slicer.layers.height') / 1000) +
+                            " F" + settings.get('slicer.lifting.decline') + ";\n";
+                    } else {
+                        wowFile += "G1 Z0 F10;\n";
+                        wowFile += "G1 Z0 F10;\n";
+                    }
+
+                    wowFile += "{{\n";
 
                     //var binary_layer = (new TextDecoder("utf-8")).decode(array)
                     wowFile += bin2string(array);
@@ -256,12 +277,15 @@ function getSlice(layerNumber) {
 
                     //bottom layer
                     var exposure_time;
-                    if(layerNumber<=settings.get('slicer.layers.bottom')){
+                    if (layerNumber <= settings.get('slicer.layers.bottom')) {
                         exposure_time = settings.get('slicer.light.bottom');
-                    }else{
+                    } else {
                         exposure_time = settings.get('slicer.light.on');
                     }
-                    wowFile += "}}\nM106 S"+settings.get('slicer.light.strength')+";\nG4 S" + exposure_time / 1000 + ";\n"
+
+                    wowFile += "}}\n";
+                    wowFile += "M106 S" + settings.get('slicer.light.strength') + ";\n";
+                    wowFile += "G4 S" + exposure_time * currentSubLayerBitflag / numberOfNonZeroBitstates / 1000 + ";\n";
                 }
             });
 
@@ -840,7 +864,7 @@ function startSlicing() {
             declineSpeed  : parseInt(settings.get('slicer.lifting.decline')),  // mm/min
             liftingHeight : parseInt(settings.get('slicer.lifting.height'))  // mm
         }, null, 2));
-        WOWExport = settings.get('slicer.wow')
+        WOWExport = settings.get('slicer.wow');
         SVGExport = settings.get('slicer.svg');
         PNGExport = settings.get('slicer.png');
     }
